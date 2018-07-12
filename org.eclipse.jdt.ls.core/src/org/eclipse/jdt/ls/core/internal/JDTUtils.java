@@ -45,6 +45,7 @@ import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.ILocalVariable;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMemberValuePair;
+import org.eclipse.jdt.core.IModuleDescription;
 import org.eclipse.jdt.core.IOpenable;
 import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.ISourceRange;
@@ -754,5 +755,39 @@ public final class JDTUtils {
 				}
 			}
 		}
+	}
+
+	public static IJavaProject getJavaProject(IProject project) {
+		if (isJavaProject(project)) {
+			return JavaCore.create(project);
+		}
+		return null;
+	}
+
+	public static boolean isJavaProject(IProject project) {
+		if (project == null || !project.exists()) {
+			return false;
+		}
+		try {
+			if (!project.isNatureEnabled(JavaCore.NATURE_ID)) {
+				return false;
+			}
+		} catch (CoreException e) {
+			return false;
+		}
+		return true;
+	}
+
+	public static String getModuleName(IJavaProject project) {
+		if (project == null || !JavaRuntime.isModularProject(project)) {
+			return null;
+		}
+		IModuleDescription module;
+		try {
+			module = project.getModuleDescription();
+		} catch (CoreException e) {
+			return null;
+		}
+		return module == null ? null : module.getElementName();
 	}
 }

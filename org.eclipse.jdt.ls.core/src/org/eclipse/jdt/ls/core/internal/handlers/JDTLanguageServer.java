@@ -52,6 +52,8 @@ import org.eclipse.jdt.ls.core.internal.JavaLanguageServerPlugin;
 import org.eclipse.jdt.ls.core.internal.JobHelpers;
 import org.eclipse.jdt.ls.core.internal.LanguageServerWorkingCopyOwner;
 import org.eclipse.jdt.ls.core.internal.ServiceStatus;
+import org.eclipse.jdt.ls.core.internal.WorkspaceIdentifier;
+import org.eclipse.jdt.ls.core.internal.handlers.ResolveMainClassHandler.ResolutionItem;
 import org.eclipse.jdt.ls.core.internal.lsp.JavaProtocolExtensions;
 import org.eclipse.jdt.ls.core.internal.managers.ContentProviderManager;
 import org.eclipse.jdt.ls.core.internal.managers.FormatterManager;
@@ -696,6 +698,13 @@ public class JDTLanguageServer implements LanguageServer, TextDocumentService, W
 		logInfo(">> java/didChangeWorkspaceFolders");
 		WorkspaceFolderChangeHandler handler = new WorkspaceFolderChangeHandler(pm);
 		handler.update(params);
+	}
+
+	@Override
+	public CompletableFuture<List<ResolutionItem>> resolveMainClass(final WorkspaceIdentifier params) {
+		logInfo(">> java/resolveMainClass");
+		ResolveMainClassHandler handler = new ResolveMainClassHandler();
+		return computeAsync(monitor -> handler.resolveMainClass(params, monitor));
 	}
 
 	public void sendStatus(ServiceStatus serverStatus, String status) {
