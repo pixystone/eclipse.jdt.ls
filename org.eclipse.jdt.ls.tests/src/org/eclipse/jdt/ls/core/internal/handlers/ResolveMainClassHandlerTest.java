@@ -2,15 +2,14 @@ package org.eclipse.jdt.ls.core.internal.handlers;
 
 import java.util.List;
 
+import org.eclipse.jdt.ls.core.internal.WorkspaceIdentifier;
+import org.eclipse.jdt.ls.core.internal.handlers.ResolveMainClassHandler.ResolutionItem;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.eclipse.jdt.ls.core.internal.WorkspaceIdentifier;
-import org.eclipse.jdt.ls.core.internal.handlers.ResolveMainClassHandler.ResolutionItem;
 import org.mockito.runners.MockitoJUnitRunner;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -29,11 +28,11 @@ public class ResolveMainClassHandlerTest extends AbstractCompilationUnitBasedTes
     }
 
     @Test
-    public void testResolveMainClassHandler() throws Exception {
+    public void testResolveMainClassHandler() {
         List<ResolutionItem> items = handler.resolveMainClass(new WorkspaceIdentifier(), monitor);
-        assertFalse(items.isEmpty());
-        assertEquals("java.Foo", items.get(0).getMainClass());
-        assertEquals("salut", items.get(0).getProjectName());
-        assertTrue(items.get(0).getFilePath().contains("maven/salut/src/main/java/java/Foo.java"));
+        assertEquals(2, items.size());
+        assertTrue(items.stream().anyMatch(i -> "java.Foo".equals(i.getMainClass())));
+        assertTrue(items.stream().anyMatch(i -> "salut".equals(i.getProjectName())));
+        assertTrue(items.stream().anyMatch(i -> i.getFilePath().endsWith("maven/salut/src/main/java/java/Foo.java")));
     }
 }

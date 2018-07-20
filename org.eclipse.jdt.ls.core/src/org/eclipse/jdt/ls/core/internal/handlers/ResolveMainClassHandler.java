@@ -12,9 +12,11 @@
 package org.eclipse.jdt.ls.core.internal.handlers;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -22,7 +24,6 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
-import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jdt.core.IJavaProject;
@@ -30,12 +31,12 @@ import org.eclipse.jdt.core.IMethod;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.search.IJavaSearchConstants;
 import org.eclipse.jdt.core.search.IJavaSearchScope;
+import org.eclipse.jdt.core.search.MethodNameMatch;
+import org.eclipse.jdt.core.search.MethodNameMatchRequestor;
 import org.eclipse.jdt.core.search.SearchEngine;
-import org.eclipse.jdt.core.search.SearchMatch;
-import org.eclipse.jdt.core.search.SearchParticipant;
 import org.eclipse.jdt.core.search.SearchPattern;
-import org.eclipse.jdt.core.search.SearchRequestor;
 import org.eclipse.jdt.ls.core.internal.JDTUtils;
+import org.eclipse.jdt.ls.core.internal.ProjectUtils;
 import org.eclipse.jdt.ls.core.internal.ResourceUtils;
 import org.eclipse.jdt.ls.core.internal.WorkspaceIdentifier;
 import org.eclipse.jdt.ls.core.internal.managers.ProjectsManager;
@@ -51,74 +52,85 @@ public class ResolveMainClassHandler {
         if (monitor.isCanceled() || params == null) {
             return Collections.emptyList();
         }
-        return resolveMainClassCore(params.getUri());
+        return resolveMainClassCore(params.getUri(), monitor);
     }
 
-    private List<ResolutionItem> resolveMainClassCore(String projectUri) {
-        IPath rootPath = null;
+    private List<ResolutionItem> resolveMainClassCore(String projectUri, IProgressMonitor monitor) {
+        List<IJavaProject> targetProjects = new ArrayList<>();
+        IJavaProject[] javaProjects = ProjectUtils.getJavaProjects();
+        if (javaProjects == null || javaProjects.length == 0) {
+            return Collections.emptyList();
+        }
         if (projectUri != null && !projectUri.isEmpty()) {
-            rootPath = ResourceUtils.filePathFromURI(projectUri);
-        }
-        final ArrayList<IPath> targetProjectPath = new ArrayList<>();
-        if (rootPath != null) {
-            targetProjectPath.add(rootPath);
-        }
-        IJavaSearchScope searchScope = SearchEngine.createWorkspaceScope();
-        SearchPattern pattern = SearchPattern.createPattern("main(String[]) void", IJavaSearchConstants.METHOD,
-                IJavaSearchConstants.DECLARATIONS, SearchPattern.R_CASE_SENSITIVE | SearchPattern.R_EXACT_MATCH);
-        ArrayList<ResolutionItem> res = new ArrayList<>();
-        SearchRequestor requestor = new SearchRequestor() {
-            @Override
-            public void acceptSearchMatch(SearchMatch match) {
-                Object element = match.getElement();
-                if (element instanceof IMethod) {
-                    IMethod method = (IMethod) element;
-                    try {
-                        if (method.isMainMethod()) {
-                            IResource resource = method.getResource();
-                            if (resource != null) {
-                                IProject project = resource.getProject();
-                                if (project != null) {
-                                    String mainClass = method.getDeclaringType().getFullyQualifiedName();
-                                    IJavaProject javaProject = JDTUtils.getJavaProject(project);
-                                    if (javaProject != null) {
-                                        String moduleName = JDTUtils.getModuleName(javaProject);
-                                        if (moduleName != null) {
-                                            mainClass = moduleName + "/" + mainClass;
-                                        }
-                                    }
-                                    String projectName = ProjectsManager.DEFAULT_PROJECT_NAME.equals(project.getName()) ? null : project.getName();
-                                    if (projectName == null
-                                        || targetProjectPath.isEmpty()
-                                        || ResourceUtils.isContainedIn(project.getLocation(), targetProjectPath)) {
-                                        String filePath = null;
-
-                                        if (match.getResource() instanceof IFile) {
-                                            try {
-                                                filePath = match.getResource().getLocation().toOSString();
-                                            } catch (Exception ex) {
-                                                // ignore
-                                            }
-                                        }
-                                        res.add(new ResolutionItem(mainClass, projectName, filePath));
-                                    }
-                                }
-                            }
-                        }
-                    } catch (JavaModelException e) {
-                        // ignore
-                    }
-                }
+            final IPath rootPath = ResourceUtils.filePathFromURI(projectUri);
+            Optional<IJavaProject> project = Arrays.stream(javaProjects)
+                .filter(p -> {
+                    IPath path = p.getPath();
+                    return path != null && path.equals(rootPath);
+                })
+                .findAny();
+            if (project.isPresent()) {
+                javaProjects = new IJavaProject[] {project.get()};
+                targetProjects.add(project.get());
             }
-        };
-        SearchEngine searchEngine = new SearchEngine();
+        }
+        final ArrayList<ResolutionItem> res = new ArrayList<>();
         try {
-            searchEngine.search(pattern, new SearchParticipant[] {SearchEngine.getDefaultSearchParticipant()},
-                    searchScope, requestor, null /* progress monitor */);
+            new SearchEngine().searchAllMethodNames(null, SearchPattern.R_PATTERN_MATCH,
+                "main".toCharArray(),
+                SearchPattern.R_FULL_MATCH,
+                SearchEngine.createJavaSearchScope(javaProjects, IJavaSearchScope.SOURCES),
+                new MethodNameMatchRequestor() {
+                    @Override
+                    public void acceptMethodNameMatch(MethodNameMatch methodNameMatch) {
+                        collectResult(methodNameMatch.getMethod(), targetProjects, res);
+                    }
+                }, IJavaSearchConstants.WAIT_UNTIL_READY_TO_SEARCH, monitor);
         } catch (Exception e) {
             logger.log(Level.SEVERE, String.format("Searching the main class failure: %s", e.toString()), e);
         }
         return res.stream().distinct().collect(Collectors.toList());
+    }
+
+    private void collectResult(IMethod method, List<IJavaProject> targetProjects, ArrayList<ResolutionItem> res) {
+        if (method == null) {
+            return;
+        }
+        try {
+            if (method.isMainMethod()) {
+                IJavaProject methodJavaProject = method.getJavaProject();
+                if (methodJavaProject == null) {
+                    return;
+                }
+                String mainClass = method.getDeclaringType().getFullyQualifiedName();
+                String moduleName = JDTUtils.getModuleName(methodJavaProject);
+                if (moduleName != null) {
+                    mainClass = moduleName + "/" + mainClass;
+                }
+                IProject project = methodJavaProject.getProject();
+                String projectName = ProjectsManager.DEFAULT_PROJECT_NAME.equals(project.getName()) ? null : project.getName();
+                if (projectName == null
+                    || targetProjects.isEmpty()
+                    || isContainsIn(methodJavaProject, targetProjects)) {
+                    String filePath = null;
+
+                    if (method.getResource() instanceof IFile) {
+                        try {
+                            filePath = method.getResource().getLocation().toOSString();
+                        } catch (Exception ex) {
+                            // ignore
+                        }
+                    }
+                    res.add(new ResolutionItem(mainClass, projectName, filePath));
+                }
+            }
+        } catch (JavaModelException e) {
+            // ignore
+        }
+    }
+
+    private static boolean isContainsIn(IJavaProject project, List<IJavaProject> targetProjects) {
+        return project != null && targetProjects.stream().anyMatch(project::equals);
     }
 
     public static class ResolutionItem {
