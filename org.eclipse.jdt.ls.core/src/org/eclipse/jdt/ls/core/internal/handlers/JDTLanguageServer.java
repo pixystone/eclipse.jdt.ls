@@ -725,6 +725,13 @@ public class JDTLanguageServer implements LanguageServer, TextDocumentService, W
 	}
 
 	@Override
+	public CompletableFuture<WorkspaceEdit> renameClassFile(final RenameClassFileParams params) {
+		logInfo(">> java/renameClassFile");
+		RenameClassFileHandler handler = new RenameClassFileHandler(preferenceManager);
+		return computeAsync(monitor -> handler.rename(params, monitor));
+	}
+
+	@Override
 	public CompletableFuture<List<? extends Location>> implementation(TextDocumentPositionParams position) {
 		logInfo(">> document/implementation");
 		return computeAsyncWithClientProgress((monitor) -> new ImplementationsHandler(preferenceManager).findImplementations(position, monitor));
