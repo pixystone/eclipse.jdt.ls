@@ -10,9 +10,11 @@
  *******************************************************************************/
 package org.eclipse.jdt.ls.core.internal.lsp;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.eclipse.jdt.ls.core.internal.BuildWorkspaceStatus;
+import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest;
@@ -39,4 +41,8 @@ public interface JavaProtocolExtensions {
 
 	@JsonRequest
 	CompletableFuture<BuildWorkspaceStatus> buildWorkspace(boolean forceReBuild);
+
+	@JsonRequest
+	CompletableFuture<List<Location>> fileReferences(TextDocumentIdentifier params);
+
 }
